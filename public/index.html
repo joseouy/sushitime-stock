@@ -43,7 +43,13 @@
 </section>
 
 <section id="order" class="view hidden">
-  <div class="section-head"><div><h2>Preparar próximo pedido</h2><p id="purchaseInfo"></p></div><button class="secondary" onclick="loadRecommendations()">Actualizar</button></div>
+  <div class="section-head">
+    <div><h2>Preparar próximo pedido</h2><p id="purchaseInfo"></p></div>
+    <div class="actions">
+      <button class="secondary" onclick="loadRecommendations()">Actualizar</button>
+      <button onclick="openNewProduct()">+ Agregar producto</button>
+    </div>
+  </div>
   <div id="recommendations"></div>
   <div class="sticky-actions"><button onclick="saveOrder()">Guardar pedido</button><button onclick="sendWhatsApp()">Enviar por WhatsApp</button></div>
 </section>
