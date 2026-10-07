@@ -1,0 +1,10 @@
+{
+  "name": "sushitime-stock",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sushitime - control de stock y asistencia para pedidos",
+  "main": "server.js",
+  "scripts": {"start": "node server.js"},
+  "engines": {"node": ">=20"},
+  "dependencies": {"express": "^5.1.0", "express-session": "^1.18.2", "multer": "^2.0.2", "pg": "^8.16.3"}
+}
