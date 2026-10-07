@@ -297,6 +297,173 @@ async function init() {
     }
   }
 
+  
+  // === SUSHITIME: carga completa de stock 07/10/2026 ===
+  await pool.query(`CREATE TABLE IF NOT EXISTS app_migrations (
+    key TEXT PRIMARY KEY,
+    applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`);
+
+  const mig = await pool.query(
+    "SELECT 1 FROM app_migrations WHERE key=$1",
+    ["stock_snapshot_2026_10_07"]
+  );
+
+  if (!mig.rowCount) {
+    await pool.query("ALTER TABLE products ADD COLUMN IF NOT EXISTS stock_state TEXT NOT NULL DEFAULT 'raw'");
+    await pool.query("ALTER TABLE products ADD COLUMN IF NOT EXISTS notes TEXT");
+    await pool.query("ALTER TABLE products ADD COLUMN IF NOT EXISTS expiry_date DATE");
+
+    const stock = {
+      "Arroz":30,
+      "Azúcar":21,
+      "Vinagre":7,
+      "Algas Nori":3,
+      "Salsa de soja":20,
+      "Wasabi":3,
+      "Jengibre":1,
+      "Panko":15,
+      "Pan rallado":0,
+      "Harina":0,
+      "Sésamo":1.5,
+      "Castañas de cajú":1.25,
+      "Tabasco":1,
+      "Mayonesa":0,
+      "Barbacoa":3.25,
+      "Sal":0,
+      "Aceite girasol":0,
+      "Aceite fritador":20,
+      "Tomates secos":0,
+      "Queso crema":24,
+      "Cheddar":5,
+      "Arrolladitos":2.5,
+      "Miel":0.5,
+      "Papel film":1250,
+      "Separadores":3.75,
+      "Palitos brochette":1,
+      "Papel higiénico":11,
+      "Papel absorbente":2.5,
+      "Detergente":5,
+      "Hipoclorito":3.5,
+      "Limpiador piso":5,
+      "Limpiador vidrio":0,
+      "Esponjas":5,
+      "Esponjas aluminio":0,
+      "Bolsas residuos":1,
+      "Desengrasante":450,
+      "Repasadores":7,
+      "Trapos piso":3,
+      "Palta":1.5,
+      "Rúcula":15,
+      "Ciboulette":10,
+      "Cilantro":2,
+      "Cebolla":3,
+      "Pepino":0,
+      "Lima":3,
+      "Mango":17,
+      "Maracuyá":0.5,
+      "Huevos":7,
+      "Salmón fresco":19.13,
+      "Salmón ahumado":8.5,
+      "Pescado blanco":8,
+      "Camarón cocido nigiri":1,
+      "Atún rojo":6.5,
+      "Camarón":17.5,
+      "Rabas":1.5
+    };
+
+    const notes = {
+      "Arroz":"1 funda de 25 kg + 5 kg abiertos",
+      "Vinagre":"7 L físicos. Hay además 5 L elaborados, separados",
+      "Algas Nori":"2 cerradas + 1 abierta",
+      "Panko":"10 kg cerrados + 5 kg abiertos",
+      "Sésamo":"1,5 kg crudos + 0,5 kg cocidos separados",
+      "Castañas de cajú":"1 kg + 250 g; preparación caramelizada separada",
+      "Barbacoa":"Bolsa de 6,5 kg, aproximadamente media bolsa disponible",
+      "Queso crema":"12 x 2 kg = 24 kg",
+      "Cheddar":"5 piezas, aproximadamente media presentación",
+      "Arrolladitos":"2 x 1 kg + menos de medio paquete adicional",
+      "Papel film":"1 rollo cerrado de 1000 m + menos de medio rollo grande",
+      "Separadores":"1 cerrado + 1 casi cerrado + 1 medio + 1 casi vacío",
+      "Salmón fresco":"19,13 kg netos; 13 piezas. Vencimiento 06/10/2026",
+      "Salmón ahumado":"8 bolsas + 0,5 bolsa descongelada",
+      "Atún rojo":"13 x 0,5 kg + 1 abierto",
+      "Camarón":"14 x 1 kg + 2 kg + 1,5 kg hervidos; mantener separados",
+      "Rabas":"1,5 kg para preparar"
+    };
+
+    for (const [name, qty] of Object.entries(stock)) {
+      const q = await pool.query(
+        "SELECT id FROM products WHERE lower(name)=lower($1) LIMIT 1",
+        [name]
+      );
+      if (q.rowCount) {
+        const id = q.rows[0].id;
+        await pool.query(
+          "INSERT INTO stock(product_id,quantity) VALUES($1,$2) ON CONFLICT(product_id) DO UPDATE SET quantity=EXCLUDED.quantity,updated_at=NOW()",
+          [id, qty]
+        );
+        if (notes[name]) {
+          await pool.query("UPDATE products SET notes=$2 WHERE id=$1",[id,notes[name]]);
+        }
+      }
+    }
+
+    // Productos elaborados y trabajos en proceso: NO entran en el cálculo de compras.
+    const extra = [
+      ["Vinagre elaborado","Elaborados","L",5,"finished","5 L elaborados; separado del vinagre crudo"],
+      ["Sú","Elaborados","L",9,"finished","9 L elaborados"],
+      ["Salsa de maracuyá","Elaborados","L",7,"finished","7 L elaborados"],
+      ["Teriyaki","Elaborados","L",2,"finished","2 L elaborados"],
+      ["Mini salmón","En elaboración","caja",4,"wip","4 cajas en proceso"],
+      ["Camarón cocido nigiri WIP","En elaboración","caja",1,"wip","1 caja en proceso"],
+      ["Camarón empanado","En elaboración","caja",1,"wip","1 caja"],
+      ["Pescado blanco empanado","En elaboración","caja",0.333333,"wip","1/3 de caja"],
+      ["Rabas empanadas","En elaboración","caja",1,"wip","1 caja"],
+      ["Diablas","En elaboración","caja",5.5,"wip","Mezcla suficiente para 5–6 cajas; todavía no son cajas terminadas"],
+      ["Cebolla caramelizada","En elaboración","caja",0,"wip","Debe elaborarse mañana; todavía no está terminada"]
+    ];
+
+    for (const [name,category,unit,qty,state,note] of extra) {
+      let q = await pool.query("SELECT id FROM products WHERE lower(name)=lower($1) LIMIT 1",[name]);
+      let id;
+      if (q.rowCount) {
+        id=q.rows[0].id;
+        await pool.query(
+          "UPDATE products SET category=$2,unit=$3,stock_state=$4,notes=$5,control_type='manual',weekly_consumption=0 WHERE id=$1",
+          [id,category,unit,state,note]
+        );
+      } else {
+        const r = await pool.query(
+          "INSERT INTO products(name,category,unit,purchase_unit,conversion,control_type,safety_stock,weekly_consumption,stock_state,notes) VALUES($1,$2,$3,$3,1,'manual',0,0,$4,$5) RETURNING id",
+          [name,category,unit,state,note]
+        );
+        id=r.rows[0].id;
+      }
+      await pool.query(
+        "INSERT INTO stock(product_id,quantity) VALUES($1,$2) ON CONFLICT(product_id) DO UPDATE SET quantity=EXCLUDED.quantity,updated_at=NOW()",
+        [id,qty]
+      );
+    }
+
+    // Únicos productos con cálculo automático confirmado por ahora.
+    await pool.query("UPDATE products SET control_type='automatic',safety_stock=30,weekly_consumption=54,purchase_unit='funda',conversion=25 WHERE lower(name)='arroz'");
+    await pool.query("UPDATE products SET control_type='automatic',safety_stock=10,weekly_consumption=29,purchase_unit='kg',conversion=1 WHERE lower(name)='azúcar'");
+    await pool.query("UPDATE products SET control_type='automatic',safety_stock=5,weekly_consumption=20,purchase_unit='bidón',conversion=5 WHERE lower(name)='vinagre'");
+
+    await pool.query(
+      "UPDATE products SET expiry_date='2026-10-06' WHERE lower(name)='salmón fresco'"
+    );
+
+    await pool.query(
+      "INSERT INTO app_migrations(key) VALUES($1)",
+      ["stock_snapshot_2026_10_07"]
+    );
+
+    console.log("SUSHITIME: stock completo inicial cargado.");
+  }
+  // === FIN CARGA COMPLETA ===
+
   console.log("Base de datos inicializada correctamente.");
 }
 
