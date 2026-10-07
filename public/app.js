@@ -1,25 +1,134 @@
-const app=document.getElementById('app');let state={page:'dashboard',products:[],categories:[],recs:[],search:'',category:'all'};
-const api=async(url,opt={})=>{const r=await fetch(url,opt);if(r.status===401){showLogin();throw new Error('auth')}const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'Error');return d};
-function showLogin(){app.innerHTML=`<div class="login"><div class="loginbox"><h1>Sushitime Stock</h1><p class="sub">Control de stock y pedidos</p><label>Usuario<input id="u" autocomplete="username"></label><label>Contraseña<input id="p" type="password" autocomplete="current-password"></label><button onclick="login()">Entrar</button><p id="err" class="small" style="color:#b91c1c"></p></div></div>`}
-async function login(){try{await api('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user:u.value,password:p.value})});render()}catch(e){document.getElementById('err').textContent=e.message}}
-function shell(content){app.innerHTML=`<div class="layout"><aside class="side" id="side"><div class="brand">Sushitime Stock</div><div class="nav">${nav('dashboard','🏠 Dashboard')}${nav('order','🛒 Preparar próximo pedido')}${nav('stock','📦 Stock')}${nav('purchases','🧾 Compras')}${nav('movements','🔄 Movimientos')}${nav('settings','⚙️ Configuración')}<button onclick="logout()">👤 Cerrar sesión</button></div></aside><main class="main"><div class="top"><div><button class="menu" onclick="side.classList.toggle('open')">☰</button><div class="title">${pageTitle()}</div><div class="sub">Control operativo interno</div></div></div>${content}</main></div>`}
-function nav(p,t){return `<button class="${state.page===p?'active':''}" onclick="go('${p}')">${t}</button>`}function pageTitle(){return ({dashboard:'Dashboard',order:'Preparar próximo pedido',stock:'Stock',purchases:'Compras',movements:'Movimientos',settings:'Configuración'})[state.page]}
-async function render(){try{await api('/api/me');}catch{return}if(state.page==='dashboard')return dashboard();if(state.page==='stock')return stock();if(state.page==='order')return order();if(state.page==='purchases')return purchases();if(state.page==='movements')return movements();return settings()}
-function go(p){state.page=p;document.getElementById('side')?.classList.remove('open');render()}
-async function dashboard(){const rec=await api('/api/recommendations');state.recs=rec;const critical=rec.filter(x=>x.priority==='critico').length, buy=rec.filter(x=>x.priority==='comprar').length, review=rec.filter(x=>x.priority==='revisar').length;shell(`<div class="grid grid2"><button class="bigbtn" onclick="go('order')">🛒 Preparar próximo pedido<span>${critical} críticos · ${buy} para comprar · ${review} para revisar</span></button><button class="bigbtn ghost" onclick="go('stock')">📦 Ver stock completo<span>Buscar, filtrar y editar cantidades</span></button></div><div class="section">${rec.length?rec.slice(0,5).map(x=>`<div class="notice"><b>${x.name}</b> — ${label(x.priority)} · recomendado ${fmt(x.buy)} ${x.unit||''}</div>`).join(''):'<div class="card empty">Sin alertas de compra ahora.</div>'}</div>`)}
-function label(p){return p==='critico'?'🔴 Crítico':p==='comprar'?'🟠 Comprar':'🟡 Revisar'}function fmt(n){return Number(n).toLocaleString('es-UY',{maximumFractionDigits:2})}
-async function loadProducts(){state.products=await api('/api/products?active=true');state.categories=await api('/api/categories')}
-async function stock(){await loadProducts();const list=state.products.filter(p=>(!state.search||p.name.toLowerCase().includes(state.search.toLowerCase()))&&(state.category==='all'||p.category===state.category));shell(`<div class="toolbar"><input placeholder="Buscar producto..." value="${state.search}" oninput="state.search=this.value;stock()"><select onchange="state.category=this.value;stock()"><option value="all">Todas las categorías</option>${state.categories.map(c=>`<option ${c===state.category?'selected':''}>${c}</option>`).join('')}</select><button onclick="newProduct()">+ Nuevo producto</button></div><div class="card"><table class="table"><thead><tr><th>Producto</th><th>Categoría</th><th>Stock</th><th>Estado</th><th></th></tr></thead><tbody>${list.map(p=>`<tr><td><b>${p.name}</b></td><td>${p.category}</td><td>${fmt(p.quantity)} ${p.unit}</td><td>${status(p)}</td><td><button class="ghost" onclick='editStock(${p.id},${JSON.stringify(p.name)},${p.quantity})'>Editar</button></td></tr>`).join('')}</tbody></table></div>`)}
-function status(p){const q=Number(p.quantity),s=Number(p.safety_stock||0);if(q<=0)return '<span class="pill red">Comprar</span>';if(q<s)return '<span class="pill yellow">Revisar</span>';return '<span class="pill green">OK</span>'}
-function editStock(id,name,qty){modal(`<h2>${name}</h2><p class="sub">Stock anterior: <b>${fmt(qty)}</b></p><div class="field"><label>Nuevo stock</label><input id="newq" type="number" step="0.01" value="${qty}"></div><div class="field"><label>Motivo</label><select id="reason"><option>Corrección de conteo</option><option>Consumo no registrado</option><option>Merma/desperdicio</option><option>Otro</option></select></div><br><button onclick="saveStock(${id})">Guardar</button> <button class="ghost" onclick="closeModal()">Cancelar</button>`)}async function saveStock(id){await api('/api/stock/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({quantity:Number(newq.value),reason:reason.value})});closeModal();stock()}
-async function order(){const rec=await api('/api/recommendations');state.recs=rec;let html='';for(const cat of [...new Set(rec.map(x=>x.category))]){html+=`<div class="cat">${cat}</div>`;for(const x of rec.filter(y=>y.category===cat)){html+=`<div class="card" style="margin-bottom:10px"><div class="orderitem"><div><b>${x.name}</b><div class="small muted">${label(x.priority)} · stock ${fmt(x.stock)} ${x.unit} · después ${fmt(x.after)} ${x.unit}</div><div class="small muted">${x.reason}</div></div><div class="extra">${fmt(x.buy)} ${x.unit}</div><div><input id="q_${x.id}" type="number" step="0.01" value="${x.buy}"></div><div><button class="ghost" onclick="document.getElementById('q_${x.id}').value=0">Quitar</button></div></div></div>`}}shell(`<div class="sub">${purchaseDayText()} · Revisá y modificá libremente antes de enviar.</div>${html||'<div class="card empty">No hay productos recomendados. Podés agregarlos desde “Ver stock completo”.</div>'}<div class="toolbar"><button onclick="sendOrder()">📲 Enviar pedido por WhatsApp</button><button class="ghost" onclick="go('stock')">Agregar producto manualmente</button></div>`)}function purchaseDayText(){return new Date().getDay()<=2?'Compra de martes → cubrir hasta jueves':'Compra de jueves → cubrir el período largo hasta la próxima compra'}
-async function sendOrder(){const chosen=state.recs.map(x=>({...x,buy:Number(document.getElementById('q_'+x.id).value||0)})).filter(x=>x.buy>0);if(!chosen.length)return alert('No hay productos para enviar.');const lines=['*PEDIDO SUSHITIME*',''];let last='';for(const x of chosen){if(x.category!==last){lines.push('',`*${x.category.toUpperCase()}*`);last=x.category}lines.push(`• ${x.name} — ${fmt(x.buy)} ${x.unit}`)}const msg=lines.join('\n');await api('/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({recommended:state.recs,chosen})});window.open('https://wa.me/?text='+encodeURIComponent(msg),'_blank')}
-async function purchases(){const rows=await api('/api/purchases');shell(`<div class="toolbar"><button onclick="receivePurchase()">+ Recibir mercadería</button></div><div class="card"><h3>Últimas compras recibidas</h3>${rows.length?`<table class="table"><thead><tr><th>Fecha</th><th>Proveedor</th><th>Productos</th><th>Boleta</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${new Date(r.received_at).toLocaleString('es-UY')}</td><td>${r.supplier||'—'}</td><td>${JSON.parse(r.items).length}</td><td>${r.receipt_name?`<a href="/api/purchases/${r.id}/receipt" target="_blank">Ver boleta</a>`:'—'}</td></tr>`).join('')}</tbody></table>`:'<div class="empty">Todavía no hay compras recibidas.</div>'}</div>`)}
-async function receivePurchase(){await loadProducts();modal(`<h2>Recibir mercadería</h2><p class="sub">Cargá solamente lo que efectivamente ingresó al local.</p><div class="field"><label>Proveedor</label><input id="supplier"></div><div id="receiveItems"></div><div class="field"><label>Foto de boleta/factura</label><input id="receipt" type="file" accept="image/*,.pdf"></div><br><button onclick="savePurchase()">Confirmar ingreso</button> <button class="ghost" onclick="closeModal()">Cancelar</button>`);document.getElementById('receiveItems').innerHTML=state.products.map(p=>`<div style="display:grid;grid-template-columns:1fr 120px;gap:8px;padding:5px 0"><span>${p.name}</span><input id="recv_${p.id}" type="number" step="0.01" min="0" placeholder="0"></div>`).join('')}
-async function savePurchase(){const items=state.products.map(p=>({product_id:p.id,name:p.name,received:Number(document.getElementById('recv_'+p.id).value||0)})).filter(x=>x.received>0);const fd=new FormData();fd.append('supplier',supplier.value);fd.append('items',JSON.stringify(items));if(receipt.files[0])fd.append('receipt',receipt.files[0]);await api('/api/purchases',{method:'POST',body:fd});closeModal();purchases()}
-async function movements(){const rows=await api('/api/movements');shell(`<div class="card"><table class="table"><thead><tr><th>Fecha</th><th>Producto</th><th>Tipo</th><th>Cambio</th><th>Motivo</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${new Date(r.created_at).toLocaleString('es-UY')}</td><td>${r.name}</td><td>${r.type}</td><td>${fmt(r.quantity)}</td><td>${r.reason||'—'}</td></tr>`).join('')}</tbody></table></div>`)}
-async function settings(){await loadProducts();shell(`<div class="card"><h3>Configuración de productos</h3><p class="sub">Reglas por producto. Los productos pueden ser automáticos, por mínimo o manuales.</p><table class="table"><thead><tr><th>Producto</th><th>Control</th><th>Seguridad</th><th>Presentación</th><th></th></tr></thead><tbody>${state.products.map(p=>`<tr><td>${p.name}</td><td>${p.control_type}</td><td>${fmt(p.safety_stock)} ${p.unit}</td><td>${p.purchase_unit} × ${p.conversion}</td><td><button class="ghost" onclick='editProduct(${JSON.stringify(p)})'>Editar</button></td></tr>`).join('')}</tbody></table></div>`)}
-function editProduct(p){modal(`<h2>${p.name}</h2><div class="fields"><div class="field"><label>Unidad base</label><input id="f_unit" value="${p.unit}"></div><div class="field"><label>Presentación de compra</label><input id="f_pu" value="${p.purchase_unit}"></div><div class="field"><label>Conversión</label><input id="f_conv" type="number" step="0.01" value="${p.conversion}"></div><div class="field"><label>Control</label><select id="f_ct"><option ${p.control_type==='automatico'?'selected':''}>automatico</option><option ${p.control_type==='minimo'?'selected':''}>minimo</option><option ${p.control_type==='manual'?'selected':''}>manual</option></select></div><div class="field"><label>Stock seguridad/mínimo</label><input id="f_safe" type="number" step="0.01" value="${p.safety_stock}"></div><div class="field"><label>Consumo semanal</label><input id="f_week" type="number" step="0.01" value="${p.weekly_consumption??''}"></div><div class="field"><label>Proveedor</label><input id="f_sup" value="${p.supplier||''}"></div><div class="field"><label>Último precio</label><input id="f_price" type="number" step="0.01" value="${p.last_price??''}"></div></div><br><button onclick="saveProduct(${p.id})">Guardar</button> <button class="ghost" onclick="closeModal()">Cancelar</button>`)}async function saveProduct(id){await api('/api/products/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({unit:f_unit.value,purchase_unit:f_pu.value,conversion:Number(f_conv.value),control_type:f_ct.value,safety_stock:Number(f_safe.value),weekly_consumption:f_week.value===''?null:Number(f_week.value),supplier:f_sup.value||null,last_price:f_price.value===''?null:Number(f_price.value)})});closeModal();settings()}
-function newProduct(){modal(`<h2>Nuevo producto</h2><div class="fields"><div class="field"><label>Nombre *</label><input id="np_name"></div><div class="field"><label>Categoría *</label><input id="np_cat" placeholder="Insumos, Limpieza..."></div><div class="field"><label>Unidad</label><input id="np_unit" value="unidad"></div><div class="field"><label>Presentación</label><input id="np_pu" value="unidad"></div></div><br><button onclick="createProduct()">Crear</button> <button class="ghost" onclick="closeModal()">Cancelar</button>`)}async function createProduct(){await api('/api/products',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:np_name.value,category:np_cat.value,unit:np_unit.value,purchase_unit:np_pu.value})});closeModal();stock()}
-function modal(html){const m=document.createElement('div');m.className='modal';m.id='modal';m.innerHTML='<div>'+html+'</div>';document.body.appendChild(m)}function closeModal(){document.getElementById('modal')?.remove()}async function logout(){await api('/api/logout',{method:'POST'});showLogin()}
-(async()=>{try{const m=await api('/api/me');if(m.loggedIn)render();else showLogin()}catch{showLogin()}})();
+const $=id=>document.getElementById(id);
+let recs=[], products=[];
+
+async function api(url,opts={}){
+  const r=await fetch(url,{headers:{"Content-Type":"application/json",...(opts.headers||{})},...opts});
+  const data=await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(data.error||`Error ${r.status}`);
+  return data;
+}
+async function boot(){
+  try{
+    const me=await api("/api/me");
+    if(me.loggedIn) showApp(); else $("login").classList.remove("hidden");
+  }catch(e){$("loginMsg").textContent=e.message}
+}
+async function login(){
+  $("loginMsg").textContent="";
+  try{await api("/api/login",{method:"POST",body:JSON.stringify({user:$("loginUser").value,password:$("loginPass").value})});showApp()}
+  catch(e){$("loginMsg").textContent=e.message}
+}
+async function logout(){await api("/api/logout",{method:"POST"});location.reload()}
+function showApp(){
+  $("login").classList.add("hidden");$("app").classList.remove("hidden");
+  $("today").textContent=new Date().toLocaleDateString("es-UY",{weekday:"short",day:"2-digit",month:"2-digit"});
+  show("dashboard");loadDashboard();
+}
+function show(id){
+  document.querySelectorAll(".view").forEach(x=>x.classList.add("hidden"));
+  $(id).classList.remove("hidden");
+  if(id==="dashboard")loadDashboard();
+  if(id==="stock")loadStock();
+  if(id==="purchases")loadPurchases();
+  if(id==="movements")loadMovements();
+  if(id==="config")loadConfig();
+  if(id==="order")loadRecommendations();
+}
+function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
+
+async function loadDashboard(){
+  const r=await api("/api/recommendations");recs=r.items;
+  const buy=recs.filter(x=>x.status==="buy").length, review=recs.filter(x=>x.status==="review").length;
+  $("dashCards").innerHTML=`<div class="metric"><span>Comprar</span><b>${buy}</b></div><div class="metric"><span>Revisar</span><b>${review}</b></div><div class="metric"><span>Próxima compra</span><b>${r.purchaseDay}</b></div>`;
+}
+async function loadRecommendations(){
+  const r=await api("/api/recommendations");recs=r.items;
+  $("purchaseInfo").textContent=`Próxima compra: ${r.purchaseDay} · cobertura estimada: ${r.daysToPurchase} días`;
+  const groups={};
+  recs.filter(x=>x.status!=="ok").forEach(x=>(groups[x.category]??=[]).push(x));
+  $("recommendations").innerHTML=Object.keys(groups).length?Object.entries(groups).map(([cat,items])=>`
+    <h3 class="group-title">${esc(cat)}</h3>${items.map((x,i)=>`
+    <div class="product ${x.status}">
+      <div class="row"><div><b>${esc(x.name)}</b><div class="sub">Stock: ${x.quantity} ${esc(x.unit)} · Necesidad: ${Number(x.need).toFixed(2)} · ${esc(x.reason)}</div></div>
+      <input class="qty orderQty" data-id="${x.id}" data-name="${esc(x.name)}" data-unit="${esc(x.purchase_unit||x.unit)}" type="number" min="0" step="0.01" value="${x.recommended}">
+      </div>
+    </div>`).join("")}`).join(""):`<div class="card"><b>No hay productos para comprar.</b><p>Podés abrir Stock completo para agregar un producto manualmente.</p></div>`;
+}
+function chosenFromUI(){
+  return [...document.querySelectorAll(".orderQty")].map(el=>({product_id:Number(el.dataset.id),name:el.dataset.name,quantity:Number(el.value)||0,unit:el.dataset.unit})).filter(x=>x.quantity>0);
+}
+async function saveOrder(){
+  const chosen=chosenFromUI();
+  const r=await api("/api/orders",{method:"POST",body:JSON.stringify({recommended:recs.filter(x=>x.recommended>0).map(x=>({product_id:x.id,name:x.name,quantity:x.recommended})),chosen})});
+  alert(`Pedido guardado #${r.id}`);
+}
+function sendWhatsApp(){
+  const chosen=chosenFromUI(); if(!chosen.length)return alert("No hay cantidades.");
+  const text=["PEDIDO SUSHITIME","",...chosen.map(x=>`• ${x.name}: ${x.quantity} ${x.unit}`)].join("\n");
+  window.open("https://wa.me/?text="+encodeURIComponent(text),"_blank");
+}
+async function loadStock(){
+  products=await api("/api/products?active=true&search="+encodeURIComponent($("stockSearch")?.value||""));
+  $("stockList").innerHTML=products.map(x=>`<div class="product ${Number(x.quantity)<=0?"critical":""}">
+    <div class="row"><div><b>${esc(x.name)}</b><div class="sub">${esc(x.category)} · ${Number(x.quantity)} ${esc(x.unit)}</div></div>
+    <button class="secondary" onclick="editStock(${x.id},${Number(x.quantity)})">Editar</button></div></div>`).join("");
+}
+async function editStock(id,old){
+  $("modalBody").innerHTML=`<h3>Editar stock</h3><p>Anterior: <b>${old}</b></p><div class="form"><input id="newQty" type="number" min="0" step="0.01" value="${old}"><select id="reason"><option>Conteo/corrección</option><option>Consumo no registrado</option><option>Merma/desperdicio</option><option>Error de conteo anterior</option><option>Otro</option></select><button onclick="saveStock(${id})">Guardar</button></div>`;
+  $("modal").classList.remove("hidden");
+}
+async function saveStock(id){
+  await api("/api/stock/"+id,{method:"PATCH",body:JSON.stringify({quantity:Number($("newQty").value),note:$("reason").value})});
+  closeModal();loadStock();
+}
+async function loadMovements(){
+  const rows=await api("/api/movements");
+  $("movementList").innerHTML=rows.map(x=>`<div class="movement"><b>${esc(x.name||"Producto")}</b> · ${esc(x.type)}<div class="sub">${x.previous_quantity??"-"} → ${x.new_quantity??"-"} · ${new Date(x.created_at).toLocaleString("es-UY")} · ${esc(x.note||"")}</div></div>`).join("");
+}
+async function loadPurchases(){
+  const rows=await api("/api/purchases");
+  $("purchaseList").innerHTML=rows.map(x=>`<div class="purchase"><div class="row"><div><b>Compra #${x.id}</b><div class="sub">${esc(x.supplier||"Sin proveedor")} · ${new Date(x.purchase_date).toLocaleDateString("es-UY")} · $${Number(x.total).toFixed(2)}</div></div>${x.receipt_mime?`<a target="_blank" href="/api/purchases/${x.id}/receipt">Boleta</a>`:""}</div></div>`).join("")||"<p>No hay compras recibidas.</p>";
+}
+async function openPurchaseForm(){
+  products=await api("/api/products?active=true");
+  $("modalBody").innerHTML=`<h3>Registrar compra recibida</h3><div class="form"><input id="supplier" placeholder="Proveedor"><input id="receipt" type="file" accept="image/jpeg,image/png,image/webp"><div id="purchaseRows">${products.slice(0,12).map(x=>`<div class="grid"><span>${esc(x.name)}</span><input class="recv" data-id="${x.id}" placeholder="cantidad recibida" type="number" min="0" step="0.01"><input class="price" data-id="${x.id}" placeholder="precio" type="number" min="0" step="0.01"></div>`).join("")}</div><button onclick="savePurchase()">Confirmar recepción</button></div>`;
+  $("modal").classList.remove("hidden");
+}
+async function savePurchase(){
+  const items=[...document.querySelectorAll(".recv")].map((el,i)=>({product_id:Number(el.dataset.id),quantity:Number(el.value)||0,unit_price:Number(document.querySelectorAll(".price")[i].value)||0})).filter(x=>x.quantity>0);
+  if(!items.length)return alert("Ingresá al menos una cantidad recibida.");
+  const fd=new FormData();fd.append("supplier",$("supplier").value);fd.append("items",JSON.stringify(items));if($("receipt").files[0])fd.append("receipt",$("receipt").files[0]);
+  const r=await fetch("/api/purchases",{method:"POST",body:fd});const d=await r.json();if(!r.ok)throw new Error(d.error||"Error");
+  closeModal();loadPurchases();alert(`Compra #${d.id} recibida. El stock se actualizó con lo efectivamente recibido.`);
+}
+async function loadConfig(){
+  const all=await api("/api/products?active=all");
+  $("configList").innerHTML=all.map(x=>`<div class="product"><div class="row"><div><b>${esc(x.name)}</b><div class="sub">${esc(x.category)} · ${esc(x.control_type)} · presentación ${x.conversion} ${esc(x.purchase_unit)}</div></div><button class="secondary" onclick="editProduct(${x.id})">Editar</button></div></div>`).join("");
+}
+async function editProduct(id){
+  const x=products.find(p=>p.id===id)|| (await api("/api/products?active=all")).find(p=>p.id===id);
+  $("modalBody").innerHTML=`<h3>Configurar ${esc(x.name)}</h3><div class="form">
+  <label>Nombre<input id="pn" value="${esc(x.name)}"></label><label>Categoría<input id="pc" value="${esc(x.category)}"></label>
+  <div class="grid"><label>Unidad<input id="pu" value="${esc(x.unit)}"></label><label>Unidad compra<input id="ppu" value="${esc(x.purchase_unit)}"></label></div>
+  <div class="grid"><label>Conversión/presentación<input id="pconv" type="number" step="0.01" value="${x.conversion}"></label><label>Stock seguridad<input id="psafe" type="number" step="0.01" value="${x.safety_stock}"></label></div>
+  <div class="grid"><label>Consumo semanal<input id="pweek" type="number" step="0.01" value="${x.weekly_consumption}"></label><label>Control<select id="pcontrol"><option value="automatic">Automático</option><option value="minimum">Mínimo</option><option value="manual">Manual</option></select></label></div>
+  <label>Proveedor<input id="psupplier" value="${esc(x.supplier||"")}"></label><button onclick="saveProduct(${id})">Guardar</button></div>`;
+  $("pcontrol").value=x.control_type;$("modal").classList.remove("hidden");
+}
+async function saveProduct(id){
+  await api("/api/products/"+id,{method:"PATCH",body:JSON.stringify({name:$("pn").value,category:$("pc").value,unit:$("pu").value,purchase_unit:$("ppu").value,conversion:Number($("pconv").value),safety_stock:Number($("psafe").value),weekly_consumption:Number($("pweek").value),control_type:$("pcontrol").value,supplier:$("psupplier").value})});
+  closeModal();loadConfig();
+}
+function openNewProduct(){
+ $("modalBody").innerHTML=`<h3>Nuevo producto</h3><div class="form">
+ <input id="nn" placeholder="Nombre"><input id="nc" placeholder="Categoría">
+ <div class="grid"><input id="nu" placeholder="Unidad" value="unidad"><input id="npu" placeholder="Unidad compra" value="unidad"></div>
+ <div class="grid"><input id="nconv" type="number" value="1" min="0.01" step="0.01"><input id="nqty" type="number" value="0" min="0" step="0.01"></div>
+ <button onclick="createProduct()">Crear</button></div>`;$("modal").classList.remove("hidden");
+}
+async function createProduct(){
+ await api("/api/products",{method:"POST",body:JSON.stringify({name:$("nn").value,category:$("nc").value,unit:$("nu").value,purchase_unit:$("npu").value,conversion:Number($("nconv").value),quantity:Number($("nqty").value),control_type:"manual"})});
+ closeModal();loadConfig();
+}
+function closeModal(){$("modal").classList.add("hidden")}
+boot();

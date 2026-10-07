@@ -1,1 +1,73 @@
-<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#111827"><title>Sushitime Stock</title><link rel="manifest" href="/manifest.json"><link rel="stylesheet" href="/styles.css"></head><body><div id="app"></div><script src="/app.js"></script></body></html>
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<link rel="manifest" href="/manifest.json">
+<title>Sushitime Stock</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div id="login" class="screen">
+  <div class="card login-card">
+    <h1>Sushitime</h1><p>Stock y compras</p>
+    <input id="loginUser" placeholder="Usuario" autocomplete="username">
+    <input id="loginPass" type="password" placeholder="Contraseña" autocomplete="current-password">
+    <button onclick="login()">Entrar</button>
+    <div id="loginMsg" class="msg"></div>
+  </div>
+</div>
+
+<div id="app" class="hidden">
+<header>
+  <div><strong>Sushitime Stock</strong><small id="today"></small></div>
+  <button class="ghost" onclick="logout()">Salir</button>
+</header>
+<nav>
+  <button onclick="show('dashboard')">Dashboard</button>
+  <button onclick="show('order')">Próximo pedido</button>
+  <button onclick="show('stock')">Stock</button>
+  <button onclick="show('purchases')">Compras</button>
+  <button onclick="show('movements')">Movimientos</button>
+  <button onclick="show('config')">Configuración</button>
+</nav>
+<main>
+<section id="dashboard" class="view">
+  <h2>Dashboard</h2>
+  <div class="actions">
+    <button onclick="show('order');loadRecommendations()">Preparar próximo pedido</button>
+    <button class="secondary" onclick="show('stock');loadStock()">Ver stock completo</button>
+  </div>
+  <div id="dashCards" class="cards"></div>
+</section>
+
+<section id="order" class="view hidden">
+  <div class="section-head"><div><h2>Preparar próximo pedido</h2><p id="purchaseInfo"></p></div><button class="secondary" onclick="loadRecommendations()">Actualizar</button></div>
+  <div id="recommendations"></div>
+  <div class="sticky-actions"><button onclick="saveOrder()">Guardar pedido</button><button onclick="sendWhatsApp()">Enviar por WhatsApp</button></div>
+</section>
+
+<section id="stock" class="view hidden">
+  <div class="section-head"><h2>Stock</h2><input id="stockSearch" placeholder="Buscar producto..." oninput="loadStock()"></div>
+  <div id="stockList"></div>
+</section>
+
+<section id="purchases" class="view hidden">
+  <div class="section-head"><h2>Compras recibidas</h2><button onclick="openPurchaseForm()">Registrar compra</button></div>
+  <div id="purchaseList"></div>
+</section>
+
+<section id="movements" class="view hidden"><h2>Movimientos</h2><div id="movementList"></div></section>
+
+<section id="config" class="view hidden">
+  <div class="section-head"><h2>Configuración</h2><button onclick="openNewProduct()">Nuevo producto</button></div>
+  <div id="configList"></div>
+</section>
+</main>
+</div>
+
+<div id="modal" class="modal hidden"><div class="modal-card"><button class="close" onclick="closeModal()">×</button><div id="modalBody"></div></div></div>
+<script src="/app.js"></script>
+</body>
+</html>

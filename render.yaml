@@ -4,15 +4,15 @@ services:
     runtime: node
     plan: free
     buildCommand: npm install
-    startCommand: npm start
+    startCommand: node server.js
     envVars:
-      - key: DATABASE_URL
-        sync: false
+      - key: NODE_ENV
+        value: production
       - key: ADMIN_USER
-        value: admin
+        sync: false
       - key: ADMIN_PASSWORD
         sync: false
       - key: SESSION_SECRET
         generateValue: true
-      - key: PORT
-        value: 10000
+      - key: DATABASE_URL
+        sync: false
