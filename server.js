@@ -614,6 +614,7 @@ app.get("/api/recommendations",auth,async(req,res)=>{
       FROM products p
       LEFT JOIN stock s ON s.product_id=p.id
       WHERE p.active=true
+  AND COALESCE(p.stock_state,'raw')='raw'
       ORDER BY p.category,p.name
     `);
 
