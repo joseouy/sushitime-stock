@@ -6,6 +6,7 @@ const multer = require("multer");
 const path = require("path");
 
 const app = express();
+app.set("trust proxy", 1);
 const PORT = Number(process.env.PORT || 10000);
 const DATABASE_URL = process.env.DATABASE_URL;
 const ADMIN_USER = process.env.ADMIN_USER || "admin";
