@@ -68,10 +68,16 @@ function sendWhatsApp(){
   window.open("https://wa.me/?text="+encodeURIComponent(text),"_blank");
 }
 async function loadStock(){
-  products=await api("/api/products?active=true&search="+encodeURIComponent($("stockSearch")?.value||""));
-  $("stockList").innerHTML=products.map(x=>`<div class="product ${Number(x.quantity)<=0?"critical":""}">
-    <div class="row"><div><b>${esc(x.name)}</b><div class="sub">${esc(x.category)} · ${Number(x.quantity)} ${esc(x.unit)}</div></div>
-    <button class="secondary" onclick="editStock(${x.id},${Number(x.quantity)})">Editar</button></div></div>`).join("");
+  const list=$("stockList");
+  list.innerHTML="<p>Cargando stock...</p>";
+  try{
+    products=await api("/api/products?active=true&search="+encodeURIComponent($("stockSearch")?.value||""));
+    list.innerHTML=products.map(x=>`<div class="product ${Number(x.quantity)<=0?"critical":""}">
+      <div class="row"><div><b>${esc(x.name)}</b><div class="sub">${esc(x.category)} · ${Number(x.quantity)} ${esc(x.unit)}</div></div>
+      <button class="secondary" onclick="editStock(${x.id},${Number(x.quantity)})">Editar</button></div></div>`).join("") || "<p>No hay productos para mostrar.</p>";
+  }catch(e){
+    list.innerHTML=`<div class="card"><b>Error al cargar el stock</b><p>${esc(e.message)}</p><button onclick="loadStock()">Reintentar</button></div>`;
+  }
 }
 async function editStock(id,old){
   $("modalBody").innerHTML=`<h3>Editar stock</h3><p>Anterior: <b>${old}</b></p><div class="form"><input id="newQty" type="number" min="0" step="0.01" value="${old}"><select id="reason"><option>Conteo/corrección</option><option>Consumo no registrado</option><option>Merma/desperdicio</option><option>Error de conteo anterior</option><option>Otro</option></select><button onclick="saveStock(${id})">Guardar</button></div>`;
