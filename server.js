@@ -314,7 +314,7 @@ async function init() {
   await pool.query("ALTER TABLE products ADD COLUMN IF NOT EXISTS notes TEXT");
   await pool.query("ALTER TABLE products ADD COLUMN IF NOT EXISTS expiry_date DATE");
 
-  if (!mig.rowCount) {
+if (!mig.rowCount && process.env.ALLOW_LEGACY_STOCK_SNAPSHOT === "true") {
     const stock = {
       "Azúcar":21,
       "Vinagre":7,
