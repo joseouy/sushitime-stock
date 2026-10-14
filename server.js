@@ -196,7 +196,7 @@ async function init() {
 
   const products = [
     ["Arroz","Insumos varios","kg","funda",25,"automatic",30,54],
-    ["Azúcar","Insumos varios","kg","kg",1,"automatic",10,29],
+    ["Azucar","Insumos varios","kg","kg",1,"automatic",10,29],
     ["Vinagre","Insumos varios","L","L",1,"automatic",5,20],
     ["Algas Nori","Insumos varios","paquete","paquete",1,"manual",0,0],
     ["Salsa de soja","Insumos varios","kg","bidón",10,"manual",10,0],
