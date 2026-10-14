@@ -265,7 +265,7 @@ async function init() {
   }
 
   const stock = {
-    "Arroz":30,"Azúcar":21,"Vinagre":7,"Algas Nori":3,
+    "Arroz":30,"Azucar":21,"Vinagre":7,"Algas Nori":3,
     "Salsa de soja":20,"Wasabi":3,"Jengibre":1,"Panko":15,
     "Harina":0,"Sésamo":1.5,"Castañas de cajú":1.25,"Tabasco":1,
     "Mayonesa":0,"Barbacoa":3.25,"Aceite girasol":0,"Aceite fritador":20,
@@ -316,7 +316,7 @@ async function init() {
 
 if (!mig.rowCount && process.env.ALLOW_LEGACY_STOCK_SNAPSHOT === "true") {
     const stock = {
-      "Azúcar":21,
+      "Azucar":21,
       "Vinagre":7,
       "Algas Nori":3,
       "Salsa de soja":20,
@@ -448,7 +448,7 @@ if (!mig.rowCount && process.env.ALLOW_LEGACY_STOCK_SNAPSHOT === "true") {
 
     // Únicos productos con cálculo automático confirmado por ahora.
     await pool.query("UPDATE products SET control_type='automatic',safety_stock=30,weekly_consumption=54,purchase_unit='funda',conversion=25 WHERE lower(name)='arroz'");
-    await pool.query("UPDATE products SET control_type='automatic',safety_stock=10,weekly_consumption=29,purchase_unit='kg',conversion=1 WHERE lower(name)='azúcar'");
+    await pool.query("UPDATE products SET control_type='automatic',safety_stock=10,weekly_consumption=29,purchase_unit='kg',conversion=1 WHERE lower(name)='azucar'");
     await pool.query("UPDATE products SET control_type='automatic',safety_stock=5,weekly_consumption=20,purchase_unit='bidón',conversion=5 WHERE lower(name)='vinagre'");
 
     await pool.query(
@@ -494,7 +494,7 @@ if (!mig.rowCount && process.env.ALLOW_LEGACY_STOCK_SNAPSHOT === "true") {
           weekly_consumption=35,
           purchase_unit='funda',
           conversion=10
-      WHERE lower(name)='azúcar'
+      WHERE lower(name)='azucar'
     `);
 
     await pool.query(`
