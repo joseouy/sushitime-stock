@@ -63,69 +63,158 @@ function q(sql, params = []) {
 }
 
 function nextPurchaseDay(date = new Date()) {
+  // Compras martes y jueves. Si hoy es martes/jueves, se considera que
+  // el pedido actual ya cerró y se apunta al siguiente día de compra.
   const d = date.getDay();
-  if (d <= 2) return "martes";
-  if (d <= 4) return "jueves";
-  return "martes";
+  if (d === 0 || d === 1 || d >= 4) return "martes";
+  return "jueves";
 }
 
 function daysToPurchase(date = new Date()) {
   const d = date.getDay();
-  if (d === 0) return 2;
-  if (d === 1) return 1;
-  if (d === 2) return 2;
-  if (d === 3) return 1;
-  if (d === 4) return 5;
-  if (d === 5) return 4;
-  return 3;
+  if (d === 0) return 2; // domingo -> martes
+  if (d === 1) return 1; // lunes -> martes
+  if (d === 2) return 2; // martes -> jueves
+  if (d === 3) return 1; // miércoles -> jueves
+  if (d === 4) return 5; // jueves -> martes
+  if (d === 5) return 4; // viernes -> martes
+  return 3; // sábado -> martes
 }
 
-function roundUp(value, pack) {
-  const n = Number(value) || 0;
-  const p = Number(pack) || 1;
-  if (n <= 0) return 0;
-  return Math.ceil(n / p) * p;
+function daysCoveredByNextOrder(date = new Date()) {
+  // La compra próxima debe cubrir hasta la siguiente oportunidad de compra.
+  // Después de recibir martes, la próxima compra es jueves (2 días);
+  // después de recibir jueves, la próxima es martes (5 días).
+  const upcomingDay = nextPurchaseDay(date);
+  const cycleAfterDelivery = upcomingDay === "martes" ? 2 : 5;
+  return daysToPurchase(date) + cycleAfterDelivery;
 }
 
-function recommendation(p) {
-  const stock = Number(p.quantity || 0);
-  const weekly = Number(p.weekly_consumption || 0);
-  const safety = Number(p.safety_stock || 0);
-  const pack = Number(p.conversion || 1);
+function normalizeProductName(value) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ");
+}
 
-  if (p.control_type === "manual" || weekly <= 0) {
+function normalizedNameSql(column) {
+  // Normaliza acentos comunes en PostgreSQL sin necesitar la extensión unaccent.
+  return `lower(translate(${column}, 'ÁÉÍÓÚÜÑáéíóúüñ', 'AEIOUUNaeiouun'))`;
+}
+
+function pluralPurchaseUnit(unit, quantity) {
+  if (quantity === 1) return unit;
+  const pluralForms = {
+    "bidón": "bidones", "funda": "fundas", "caja": "cajas",
+    "bolsa": "bolsas", "botella": "botellas", "frasco": "frascos",
+    "rollo": "rollos", "unidad": "unidades", "paquete": "paquetes",
+    "maple": "maples"
+  };
+  return pluralForms[unit] || `${unit}s`;
+}
+
+function recommendation(p, date = new Date()) {
+  const stock = Math.max(0, Number(p.quantity) || 0);
+
+  // No se calcula una compra automática cuando hay productos duplicados con
+  // nombres equivalentes: sus cantidades requieren conciliación manual primero.
+  if (Number(p.duplicateCount) > 1) {
     return {
       status: "review",
       recommended: 0,
       need: 0,
       projected: stock,
-      reason: "Configuración insuficiente"
+      reason: `Hay ${p.duplicateCount} registros con nombres iguales salvo tildes/espacios. Revisá el stock de ambos antes de calcular la compra.`
+    };
+  }
+  const weekly = Math.max(0, Number(p.weekly_consumption) || 0);
+  const safety = Math.max(0, Number(p.safety_stock) || 0);
+  // conversion es el contenido de una presentación, en la unidad de stock.
+  const pack = Math.max(Number(p.conversion) || 1, 0.000001);
+  const control = p.control_type || "manual";
+
+  if (control === "manual") {
+    return {
+      status: "review", recommended: 0, need: 0, projected: stock,
+      reason: "Control manual: revisar la cantidad a comprar."
     };
   }
 
-  const days = daysToPurchase();
+  if (control !== "minimum" && control !== "automatic") {
+    return {
+      status: "review", recommended: 0, need: 0, projected: stock,
+      reason: "Tipo de control desconocido; revisar configuración."
+    };
+  }
+
+  if (control === "automatic" && weekly <= 0) {
+    return {
+      status: "review", recommended: 0, need: 0, projected: stock,
+      reason: "Falta configurar el consumo semanal."
+    };
+  }
+
+  const days = control === "automatic" ? daysCoveredByNextOrder(date) : 0;
   const need = weekly * days / 7;
-  const target = Math.max(need, safety);
-  const raw = Math.max(0, target - stock);
-  const recommended = roundUp(raw, pack);
-  const projected = stock + recommended - need;
+  // Cubre el consumo del período y procura conservar el stock de seguridad.
+  const rawUnits = Math.max(0, safety + need - stock);
+  const recommended = rawUnits > 0 ? Math.ceil(rawUnits / pack) : 0;
+  // recommended se expresa en presentaciones (fundas/bidones), no en kg/L.
+  const projected = stock + recommended * pack - need;
 
   let status = "ok";
   if (recommended > 0) status = "buy";
   else if (projected < safety) status = "review";
 
-  return {
-    status,
-    recommended,
-    need,
-    projected,
-    reason:
-      `Necesidad estimada: ${need.toFixed(2)} ${p.unit}. ` +
-      `Stock actual: ${stock.toFixed(2)}.` +
-      (recommended > 0
-        ? ` Se redondea a ${recommended} ${p.purchase_unit || p.unit}.`
-        : "")
-  };
+  const purchaseUnit = p.purchase_unit || p.unit || "unidad";
+  const reason =
+    `Necesidad estimada para ${days} días: ${need.toFixed(2)} ${p.unit}. ` +
+    `Stock actual: ${stock.toFixed(2)} ${p.unit}.` +
+    (recommended > 0
+      ? ` Se recomiendan ${recommended} ${pluralPurchaseUnit(purchaseUnit, recommended)} ` +
+        `(${(recommended * pack).toFixed(2)} ${p.unit}).`
+      : ` Stock proyectado: ${projected.toFixed(2)} ${p.unit}.`);
+
+  return { status, recommended, need, projected, coverageDays: days, reason };
+}
+
+function groupRecommendationProducts(rows) {
+  // Evita dos líneas de pedido separadas para "Azúcar" y "Azucar".
+  // No suma ni modifica existencias: un grupo duplicado pasa a revisión manual.
+  const groups = new Map();
+  for (const p of rows) {
+    const key = `${normalizeProductName(p.name)}::${normalizeProductName(p.category)}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(p);
+  }
+
+  const result = [];
+  for (const items of groups.values()) {
+    const priority = { automatic: 0, minimum: 1, manual: 2 };
+    const ranked = [...items].sort((a, b) => {
+      const difference = (priority[a.control_type] ?? 3) - (priority[b.control_type] ?? 3);
+      if (difference !== 0) return difference;
+      // Si un registro tiene cantidad cargada y el otro no, mostramos primero
+      // el que contiene más stock, pero igual se fuerza revisión por duplicado.
+      const quantityDifference = (Number(b.quantity) || 0) - (Number(a.quantity) || 0);
+      if (quantityDifference !== 0) return quantityDifference;
+      const accentA = /[áéíóúüñ]/i.test(a.name) ? 0 : 1;
+      const accentB = /[áéíóúüñ]/i.test(b.name) ? 0 : 1;
+      return accentA - accentB || Number(a.id) - Number(b.id);
+    });
+    const primary = ranked[0];
+    result.push({
+      ...primary,
+      // Si hay duplicados, se conserva la cantidad del registro principal en
+      // esta vista y se bloquea el cálculo automático para evitar sumar stock
+      // que tal vez representa la misma existencia física dos veces.
+      duplicateCount: items.length,
+      duplicateIds: items.map(item => Number(item.id))
+    });
+  }
+  return result;
 }
 
 async function init() {
@@ -253,7 +342,13 @@ async function init() {
   ];
 
   for (const p of products) {
-    const exists = await q("SELECT id FROM products WHERE name=$1 LIMIT 1",[p[0]]);
+    const exists = await q(
+      `SELECT id FROM products
+       WHERE ${normalizedNameSql("name")} = ${normalizedNameSql("$1")}
+       ORDER BY CASE WHEN name=$1 THEN 0 ELSE 1 END, id
+       LIMIT 1`,
+      [p[0]]
+    );
     if (!exists.rowCount) {
       await q(`
         INSERT INTO products
@@ -282,7 +377,13 @@ async function init() {
   };
 
   for (const [name,qty] of Object.entries(stock)) {
-    const p = await q("SELECT id FROM products WHERE name=$1",[name]);
+    const p = await q(
+      `SELECT id FROM products
+       WHERE ${normalizedNameSql("name")} = ${normalizedNameSql("$1")}
+       ORDER BY CASE WHEN name=$1 THEN 0 ELSE 1 END, id
+       LIMIT 1`,
+      [name]
+    );
     if (!p.rowCount) continue;
 
     const s = await q(
@@ -514,6 +615,39 @@ if (!mig.rowCount && process.env.ALLOW_LEGACY_STOCK_SNAPSHOT === "true") {
 
     console.log("SUSHITIME: configuración de compras aplicada.");
   }
+  // === MIGRACIÓN SEGURA V2: configuración por nombre sin importar tildes ===
+  // Solo cambia las reglas de compra; no toca stock.quantity ni borra productos.
+  const configMigrationV2 = await pool.query(
+    "SELECT 1 FROM app_migrations WHERE key=$1",
+    ["purchase_config_accent_units_2026_10_14_v2"]
+  );
+
+  if (!configMigrationV2.rowCount) {
+    await pool.query(`
+      UPDATE products
+      SET control_type='automatic', safety_stock=25,
+          weekly_consumption=45, purchase_unit='funda', conversion=25
+      WHERE ${normalizedNameSql("name")}='arroz'
+    `);
+    await pool.query(`
+      UPDATE products
+      SET control_type='automatic', safety_stock=10,
+          weekly_consumption=35, purchase_unit='funda', conversion=10
+      WHERE ${normalizedNameSql("name")}='azucar'
+    `);
+    await pool.query(`
+      UPDATE products
+      SET control_type='automatic', safety_stock=15,
+          weekly_consumption=15, purchase_unit='bidón', conversion=5
+      WHERE ${normalizedNameSql("name")}='vinagre'
+    `);
+    await pool.query(
+      "INSERT INTO app_migrations(key) VALUES($1)",
+      ["purchase_config_accent_units_2026_10_14_v2"]
+    );
+    console.log("SUSHITIME: configuración de compras v2 aplicada (sin modificar stock).");
+  }
+
   console.log("Base de datos inicializada correctamente.");
 }
 
@@ -667,10 +801,16 @@ app.get("/api/recommendations",auth,async(req,res)=>{
       ORDER BY p.category,p.name
     `);
 
+    const now = new Date();
+    const grouped = groupRecommendationProducts(r.rows);
+    const coverageDays = daysCoveredByNextOrder(now);
+
     res.json({
-      purchaseDay:nextPurchaseDay(),
-      daysToPurchase:daysToPurchase(),
-      items:r.rows.map(p=>({...p,...recommendation(p)}))
+      purchaseDay:nextPurchaseDay(now),
+      // La interfaz existente muestra este valor como "cobertura estimada".
+      daysToPurchase:coverageDays,
+      daysUntilPurchase:daysToPurchase(now),
+      items:grouped.map(p=>({...p,...recommendation(p, now)}))
     });
   }catch(e){
     res.status(500).json({error:e.message});
@@ -876,7 +1016,9 @@ app.post("/api/products",auth,async(req,res)=>{
 
   try{
     const exists=await q(
-      "SELECT id FROM products WHERE name=$1 LIMIT 1",
+      `SELECT id FROM products
+       WHERE ${normalizedNameSql("name")} = ${normalizedNameSql("$1")}
+       LIMIT 1`,
       [b.name]
     );
 
@@ -942,6 +1084,34 @@ app.patch("/api/products/:id",auth,async(req,res)=>{
 
   const set=[];
   const params=[];
+
+  if(typeof b.name === "string" && b.name.trim()) {
+    try {
+      const requestedName = b.name.trim();
+      const current = await q("SELECT name FROM products WHERE id=$1 LIMIT 1", [id]);
+      if(!current.rowCount) {
+        return res.status(404).json({error:"Producto no encontrado"});
+      }
+      // Permite editar la configuración de registros duplicados existentes si
+      // conservan su nombre; solo bloquea crear una nueva variante duplicada.
+      if(current.rows[0].name !== requestedName) {
+        const duplicate = await q(
+          `SELECT id FROM products
+           WHERE ${normalizedNameSql("name")} = ${normalizedNameSql("$1")}
+             AND id <> $2
+           LIMIT 1`,
+          [requestedName, id]
+        );
+        if(duplicate.rowCount) {
+          return res.status(400).json({
+            error:"Ya existe un producto con ese nombre (sin distinguir tildes)."
+          });
+        }
+      }
+    } catch(e) {
+      return res.status(400).json({error:e.message});
+    }
+  }
 
   for(const f of fields){
     if(Object.prototype.hasOwnProperty.call(b,f)){
