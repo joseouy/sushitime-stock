@@ -463,7 +463,57 @@ if (!mig.rowCount && process.env.ALLOW_LEGACY_STOCK_SNAPSHOT === "true") {
     console.log("SUSHITIME: stock completo inicial cargado.");
   }
   // === FIN CARGA COMPLETA ===
+  // === MIGRACIÓN: configuración operativa de compras ===
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS app_migrations (
+      key TEXT PRIMARY KEY,
+      applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
 
+  const configMigration = await pool.query(
+    "SELECT 1 FROM app_migrations WHERE key=$1",
+    ["purchase_config_2026_10_14"]
+  );
+
+  if (!configMigration.rowCount) {
+    await pool.query(`
+      UPDATE products
+      SET control_type='automatic',
+          safety_stock=25,
+          weekly_consumption=45,
+          purchase_unit='funda',
+          conversion=25
+      WHERE lower(name)='arroz'
+    `);
+
+    await pool.query(`
+      UPDATE products
+      SET control_type='automatic',
+          safety_stock=10,
+          weekly_consumption=35,
+          purchase_unit='funda',
+          conversion=10
+      WHERE lower(name)='azúcar'
+    `);
+
+    await pool.query(`
+      UPDATE products
+      SET control_type='automatic',
+          safety_stock=15,
+          weekly_consumption=15,
+          purchase_unit='bidón',
+          conversion=5
+      WHERE lower(name)='vinagre'
+    `);
+
+    await pool.query(
+      "INSERT INTO app_migrations(key) VALUES($1)",
+      ["purchase_config_2026_10_14"]
+    );
+
+    console.log("SUSHITIME: configuración de compras aplicada.");
+  }
   console.log("Base de datos inicializada correctamente.");
 }
 
