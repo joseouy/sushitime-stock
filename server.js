@@ -310,13 +310,12 @@ async function init() {
     ["stock_snapshot_2026_10_07"]
   );
 
-  if (!mig.rowCount) {
     await pool.query("ALTER TABLE products ADD COLUMN IF NOT EXISTS stock_state TEXT NOT NULL DEFAULT 'raw'");
-    await pool.query("ALTER TABLE products ADD COLUMN IF NOT EXISTS notes TEXT");
-    await pool.query("ALTER TABLE products ADD COLUMN IF NOT EXISTS expiry_date DATE");
+  await pool.query("ALTER TABLE products ADD COLUMN IF NOT EXISTS notes TEXT");
+  await pool.query("ALTER TABLE products ADD COLUMN IF NOT EXISTS expiry_date DATE");
 
+  if (!mig.rowCount) {
     const stock = {
-      "Arroz":30,
       "Azúcar":21,
       "Vinagre":7,
       "Algas Nori":3,
